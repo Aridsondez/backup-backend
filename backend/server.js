@@ -316,6 +316,7 @@ app.post('/api/addlevel', async (req, res) => {
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const { error } = require('console');
 
 // Multer storage config for profile_pictures
 const storage = multer.diskStorage({
@@ -363,6 +364,43 @@ app.post('/api/profilepicture', upload.single('profilePicture'), async (req, res
   }
 });
 
+app.post("/api/profile", async (req, res) => {
+  const { userId } = req.body;
+
+  if (!userId) {
+    return res.status(400).json({ error: "Missing Profile ID" });
+  }
+
+  try {
+    const db = client.db("POOSD"); 
+    const user = await db.collection("Users").findOne(
+      { UserId: userId },
+      {
+        projection: {
+          UserName: 1,
+          Badges: 1,
+          ProgressLevel: 1,
+          LoginStreak: 1,
+          ProfilePicture: 1
+        }
+      }
+    );
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    res.status(200).json({
+      username: user.UserName,
+      badges: user.Badges,
+      level: user.ProgressLevel,
+      loginStreak: user.LoginStreak,
+      profilePicture: user.ProfilePicture || null
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.toString() });
+  }
+});
 
 
 app.listen(5001, () => {

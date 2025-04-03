@@ -440,7 +440,6 @@ app.post("/api/profile", async (req, res) => {
 
 
 //getting the user-words
-
 app.post("/api/userwords", async (req, res) => {
   const { userId } = req.body;
 
@@ -450,14 +449,44 @@ app.post("/api/userwords", async (req, res) => {
 
   try {
     const db = client.db("POOSD");
-    const user = await db.collection("Users").findOne({ UserId: userId });
+    const users = db.collection("Users");
+    const words = db.collection("Words");
+
+    const user = await users.findOne({ UserId: userId });
 
     if (!user) return res.status(404).json({ error: "User not found" });
 
-    res.status(200).json({
-      learnedWords: user.LearnedWords || [],
-      vocabLists: user.VocabLists || [],
+    const learnedWords = user.LearnedWords || [];
+    const vocabLists = user.VocabLists || [];
+
+    // Flatten all word IDs across vocab lists
+    const allWordIds = vocabLists.flatMap(list => list.Words);
+
+    // Get unique word IDs
+    const uniqueWordIds = [...new Set(allWordIds)];
+
+    // Fetch all words by WordId
+    const fullWordObjects = await words.find({
+      WordId: { $in: uniqueWordIds }
+    }).toArray();
+
+    // Create a map for faster lookup
+    const wordMap = {};
+    fullWordObjects.forEach(word => {
+      wordMap[word.WordId] = word;
     });
+
+    // Replace word IDs in each vocab list with full word objects
+    const expandedVocabLists = vocabLists.map(list => ({
+      ...list,
+      Words: list.Words.map(wordId => wordMap[wordId]).filter(Boolean)
+    }));
+
+    res.status(200).json({
+      learnedWords,
+      vocabLists: expandedVocabLists
+    });
+
   } catch (err) {
     console.error("Error fetching user words:", err);
     res.status(500).json({ error: "Server error" });

@@ -73,27 +73,62 @@ app.post('/api/signup', async (req, res) => {
 
 // login
 app.post('/api/login', async (req, res) => {
-  console.log("THIS IS WORKING")
   const { username, password } = req.body;
 
   try {
     const db = client.db("POOSD");
-    const user = await db.collection("Users").findOne({ UserName: username, Password: md5(password) });
+    const user = await db.collection("Users").findOne({
+      UserName: username,
+      Password: md5(password)
+    });
 
-    if (user) {
-      res.status(200).json({
-        id: user.UserId,
-        email: user.Email,
-        error: ""
-      });
-    } else {
-      res.status(401).json({
+    if (!user) {
+      return res.status(401).json({
         id: -1,
         email: "",
-        error: "Invalid user name/password"
+        error: "Invalid username or password"
       });
     }
+
+    // Compare dates
+    const today = new Date();
+    const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const lastLoginDate = user.LastLoginDate ? new Date(user.LastLoginDate) : null;
+
+    let newLoginStreak = user.LoginStreak || 1;
+
+    if (lastLoginDate) {
+      const lastDateOnly = new Date(lastLoginDate.getFullYear(), lastLoginDate.getMonth(), lastLoginDate.getDate());
+
+      const diffInDays = Math.floor((todayDateOnly - lastDateOnly) / (1000 * 60 * 60 * 24));
+
+      if (diffInDays === 1) {
+        newLoginStreak += 1; // continued streak
+      } else if (diffInDays > 1) {
+        newLoginStreak = 1; // streak broken
+      } // if 0 → same day login, keep streak
+    }
+
+    // Update the login date and streak in DB
+    await db.collection("Users").updateOne(
+      { UserId: user.UserId },
+      {
+        $set: {
+          LastLoginDate: today,
+          LoginStreak: newLoginStreak
+        }
+      }
+    );
+
+    res.status(200).json({
+      id: user.UserId,
+      email: user.Email,
+      loginStreak: newLoginStreak,
+      error: ""
+    });
+
   } catch (e) {
+    console.error("Login error:", e);
     res.status(500).json({ error: e.toString() });
   }
 });
@@ -401,6 +436,102 @@ app.post("/api/profile", async (req, res) => {
     res.status(500).json({ error: e.toString() });
   }
 });
+
+
+
+//getting the user-words
+
+app.post("/api/userwords", async (req, res) => {
+  const { userId } = req.body;
+
+  if (!userId) {
+    return res.status(400).json({ error: "Missing userId" });
+  }
+
+  try {
+    const db = client.db("POOSD");
+    const user = await db.collection("Users").findOne({ UserId: userId });
+
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    res.status(200).json({
+      learnedWords: user.LearnedWords || [],
+      vocabLists: user.VocabLists || [],
+    });
+  } catch (err) {
+    console.error("Error fetching user words:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+///adding the learned word to the db
+app.post("/api/addlearnedword", async (req, res) => {
+  const { userId, word } = req.body;
+
+  try {
+    const db = client.db("POOSD");
+    await db.collection("Users").updateOne(
+      { UserId: userId },
+      { $addToSet: { LearnedWords: word } } // avoids duplicates
+    );
+    res.status(200).json({ message: "✅ Word added to LearnedWords" });
+  } catch (err) {
+    console.error("Error adding word:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+
+app.post("/api/addvocablist", async (req, res) => {
+  const { userId, word, category } = req.body;
+
+  // Validate presence
+  if (!userId || !word || !category) {
+    return res.status(400).json({ error: "Missing userId, word, or category" });
+  }
+
+  // Validate word format
+  const requiredFields = ["WordId", "English", "Spanish", "Topic"];
+  const isValidWord =
+    typeof word === "object" &&
+    requiredFields.every(
+      (field) => typeof word[field] === "string" && word[field].trim().length > 0
+    );
+
+  if (!isValidWord) {
+    return res.status(400).json({ error: "Invalid word format. Must include WordId, English, Spanish, and Topic as strings." });
+  }
+
+  try {
+    const db = client.db("POOSD");
+
+    const result = await db.collection("Users").updateOne(
+      { UserId: userId, "VocabLists.Category": category },
+      { $addToSet: { "VocabLists.$.Words": word } }
+    );
+
+    if (result.modifiedCount === 0) {
+      await db.collection("Users").updateOne(
+        { UserId: userId },
+        {
+          $push: {
+            VocabLists: {
+              VocabListId: `vocablist-${Date.now()}`,
+              Category: category,
+              Words: [word]
+            }
+          }
+        }
+      );
+    }
+
+    res.status(200).json({ message: "✅ Word added to vocab list" });
+  } catch (err) {
+    console.error("Error adding word to vocab list:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 
 
 app.listen(5001, () => {

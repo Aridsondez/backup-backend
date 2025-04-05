@@ -561,6 +561,23 @@ app.post("/api/addvocablist", async (req, res) => {
   }
 });
 
+app.post("/api/trackwordstats", async (req, res) => {
+  const { userId, wordId, correct, incorrect } = req.body;
+  if (!userId || !wordId) return res.status(400).json({ error: "Missing userId or wordId" });
+
+  try {
+    const db = client.db("POOSD");
+    await db.collection("WordStats").updateOne(
+      { UserId: userId, WordId: wordId },
+      { $set: { Correct: correct, Incorrect: incorrect } },
+      { upsert: true }
+    );
+
+    res.status(200).json({ message: "Word stats updated." });
+  } catch (e) {
+    res.status(500).json({ error: e.toString() });
+  }
+});
 
 
 app.listen(5001, () => {

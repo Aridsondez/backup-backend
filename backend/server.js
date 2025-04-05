@@ -512,54 +512,73 @@ app.post("/api/addlearnedword", async (req, res) => {
 
 
 app.post("/api/addvocablist", async (req, res) => {
-  const { userId, word, category } = req.body;
+  const { userId, words, category } = req.body;
 
-  // Validate presence
-  if (!userId || !word || !category) {
-    return res.status(400).json({ error: "Missing userId, word, or category" });
-  }
-
-  // Validate word format
-  const requiredFields = ["WordId", "English", "Spanish", "Topic"];
-  const isValidWord =
-    typeof word === "object" &&
-    requiredFields.every(
-      (field) => typeof word[field] === "string" && word[field].trim().length > 0
-    );
-
-  if (!isValidWord) {
-    return res.status(400).json({ error: "Invalid word format. Must include WordId, English, Spanish, and Topic as strings." });
+  if (!userId || !Array.isArray(words) || words.length === 0 || !category) {
+    return res.status(400).json({ error: "Missing userId, category, or words" });
   }
 
   try {
     const db = client.db("POOSD");
+    const users = db.collection("Users");
+    const wordBank = db.collection("Words");
 
-    const result = await db.collection("Users").updateOne(
-      { UserId: userId, "VocabLists.Category": category },
-      { $addToSet: { "VocabLists.$.Words": word } }
-    );
+    const user = await users.findOne({ UserId: userId });
+    if (!user) return res.status(404).json({ error: "User not found" });
 
-    if (result.modifiedCount === 0) {
-      await db.collection("Users").updateOne(
-        { UserId: userId },
-        {
-          $push: {
-            VocabLists: {
-              VocabListId: `vocablist-${Date.now()}`,
-              Category: category,
-              Words: [word]
-            }
-          }
-        }
-      );
+    // Check if category already exists for user
+    const categoryExists = user.VocabLists?.some(list => list.Category.toLowerCase() === category.toLowerCase());
+    if (categoryExists) {
+      return res.status(400).json({ error: "Vocab list category already exists" });
     }
 
-    res.status(200).json({ message: "✅ Word added to vocab list" });
+    // Validate and create unique WordIds, check against existing ones
+    const requiredFields = ["English", "Spanish", "Topic"];
+    const cleanedWords = [];
+
+    for (let word of words) {
+      const isValid = requiredFields.every(field => typeof word[field] === "string" && word[field].trim() !== "");
+      if (!isValid) return res.status(400).json({ error: "Each word must include English, Spanish, and Topic" });
+
+      const existing = await wordBank.findOne({
+        English: word.English,
+        Spanish: word.Spanish,
+        Topic: word.Topic
+      });
+
+      if (!existing) {
+        const newWord = {
+          WordId: `word-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          English: word.English,
+          Spanish: word.Spanish,
+          Topic: word.Topic
+        };
+        await wordBank.insertOne(newWord);
+        cleanedWords.push(newWord.WordId);
+      } else {
+        cleanedWords.push(existing.WordId);
+      }
+    }
+
+    // Create new vocab list
+    const newVocabList = {
+      VocabListId: `vocablist-${Date.now()}`,
+      Category: category,
+      Words: cleanedWords
+    };
+
+    await users.updateOne(
+      { UserId: userId },
+      { $push: { VocabLists: newVocabList } }
+    );
+
+    return res.status(200).json({ message: "✅ Vocab list created", list: newVocabList });
   } catch (err) {
-    console.error("Error adding word to vocab list:", err);
+    console.error("Error adding vocab list:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
+
 
 app.post("/api/trackwordstats", async (req, res) => {
   const { userId, wordId, correct, incorrect } = req.body;

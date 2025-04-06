@@ -168,7 +168,7 @@ async function sendVerificationEmail(email, username, verificationToken) {
       subject: 'Email Verification',
       text: `Hello ${username}, click here to verify: ${verificationLink}`,
     });
-    console.log('Verification email sent');
+    console.log("✅ Verification email result:", result);
   } catch (error) {
     console.error('Error sending verification email:', error);
   }

@@ -599,6 +599,38 @@ app.post("/api/trackwordstats", async (req, res) => {
 });
 
 
+app.post("/api/unlockbadge", async (req, res) => {
+  const { userId, badgeId } = req.body;
+
+  if (!userId || !badgeId) {
+    return res.status(400).json({ error: "Missing userId or badgeId" });
+  }
+
+  try {
+    const db = client.db("POOSD");
+    const users = db.collection("Users");
+
+    const user = await users.findOne({ UserId: userId });
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const alreadyHasBadge = user.Badges?.includes(badgeId);
+    if (alreadyHasBadge) {
+      return res.status(200).json({ message: "Badge already unlocked." });
+    }
+
+    await users.updateOne(
+      { UserId: userId },
+      { $addToSet: { Badges: badgeId } }
+    );
+
+    return res.status(200).json({ message: "✅ Badge unlocked!", badgeId });
+  } catch (err) {
+    console.error("Error unlocking badge:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+
 app.listen(5001, () => {
   console.log("Server started on port 5001");
 });

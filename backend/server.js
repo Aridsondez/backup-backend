@@ -159,7 +159,7 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 
 // Function to send the verification email
 async function sendVerificationEmail(email, username, verificationToken) {
-  const verificationLink = `http://habla-plus.xyz:5001/verify?token=${verificationToken}`;
+  const verificationLink = `https://backup-backend-j6zv.onrender.com/verify?token=${verificationToken}`;
   
   try {
     await resend.emails.send({
@@ -231,7 +231,7 @@ app.post('/api/resetpasswordemail', async (req, res) => {
 
 // first send email prompt to change
 async function sendPasswordResetEmail(email, username, passwordResetToken) {
-  const resetLink = `http://habla-plus.xyz:5001/resetpassword?token=${passwordResetToken}`;
+  const resetLink = `https://backup-backend-j6zv.onrender.com/resetpassword?token=${passwordResetToken}`;
   try {
     await resend.emails.send({
       from: 'Habla+ <onboarding@resend.dev>',
